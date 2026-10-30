@@ -24,7 +24,7 @@ This repository satisfies all 11 required submission criteria for independent re
 | **8** | **Execution Scripts** | [`setup.bat`](setup.bat), [`run_dashboard.bat`](run_dashboard.bat), [`setup.sh`](setup.sh), [`run_dashboard.sh`](run_dashboard.sh) | Cross-platform one-click automated setup and execution scripts for Windows, Linux, and macOS. |
 | **9** | **Results** | [`results/`](results/) (`raw/`, `summary/`, `figures/`, `screenshots/`, `manifest.json`) | Complete CSV telemetry data, held-out statistical summaries, 9 publication figures, live UI screenshots, and execution manifest. |
 | **10** | **Documentation** | [`documentation/CachePIM_Manuscript_Draft2.pdf`](documentation/CachePIM_Manuscript_Draft2.pdf) & [`docs/`](docs/) | Complete research manuscript (Draft 2 PDF), peer-review correction audit, and benchmark citations. |
-| **11** | **Demo Video** | [Watch Demo Video (Google Drive)](https://drive.google.com/file/d/1JHKhZ6rN8YMnCWYOJ6lIgAhVMI54vQWV/view?usp=drive_link) & [`demo_video/`](demo_video/) | Official demonstration video (4–7 mins): [https://drive.google.com/file/d/1JHKhZ6rN8YMnCWYOJ6lIgAhVMI54vQWV/view?usp=drive_link](https://drive.google.com/file/d/1JHKhZ6rN8YMnCWYOJ6lIgAhVMI54vQWV/view?usp=drive_link). |
+| **11** | **Demo Video** | [Watch Demo Video (Google Drive)](https://drive.google.com/file/d/1JHKhZ6rN8YMnCWYOJ6lIgAhVMI54vQWV/view?usp=drive_link) | Official demonstration video: [https://drive.google.com/file/d/1JHKhZ6rN8YMnCWYOJ6lIgAhVMI54vQWV/view?usp=drive_link](https://drive.google.com/file/d/1JHKhZ6rN8YMnCWYOJ6lIgAhVMI54vQWV/view?usp=drive_link). |
 
 ---
 
