@@ -1,0 +1,299 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage{microtype}
+\usepackage{multirow}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{CachePIM: Reproducible Analytical Exploration of Cache-Aware CPU--Processing-in-Memory Execution}
+
+\author{\IEEEauthorblockN{Bhuvaneswari M\IEEEauthorrefmark{2}, Aditya Singh Rana\IEEEauthorrefmark{1}, Vinay Mor\IEEEauthorrefmark{1}, Harsha Nethra\IEEEauthorrefmark{1}, Atharva Raut\IEEEauthorrefmark{1}, and Harsha Reddy\IEEEauthorrefmark{1}}
+\IEEEauthorblockA{\IEEEauthorrefmark{1}School of Computer Science and Engineering, Vellore Institute of Technology, Vellore, Tamil Nadu, India\\
+\IEEEauthorrefmark{2}Associate Professor, School of Computer Science and Engineering, Vellore Institute of Technology, Vellore, Tamil Nadu, India\\
+Emails: m.bhuvaneswari@vit.ac.in, aditya.singhrana2024@vitstudent.ac.in, vinay.mor2024@vitstudent.ac.in, harshanethra21@gmail.com}
+}
+
+\maketitle
+
+\begin{abstract}
+Processing-in-Memory (PIM) alleviates the memory-bandwidth wall by dispatching data-intensive computations directly into the memory subsystem. However, offloading computation to PIM is not unconditionally advantageous: host-to-device interconnect transfers, kernel launch overheads, and limited PIM operating frequencies can outweigh compute benefits, especially when the host CPU cache hierarchy exhibits high data reuse. While cycle-accurate full-system simulators require hours or days to evaluate single workloads, this paper presents \textbf{CachePIM}, an open-source, high-throughput, trace-driven analytical simulation framework designed for rapid CPU--PIM architectural co-design and crossover exploration. CachePIM models a configurable Last-Level Cache (supporting both fully associative LRU and $-way set-associative geometries capturing conflict misses) paired with a bank-parallel PIM execution model that explicitly accounts for host interconnect transfer, internal DRAM memory service with workload-dependent row-buffer locality ($\eta_{\text{row}} \in [0.25, 0.90]$), multi-bank parallelism, and double-buffered transfer pipelining ($\alpha \in [0, 1]$). CachePIM evaluates both parametric synthetic access patterns (STREAM, REUSE, RANDOM, MIXED\_PHASE) and real dynamic memory access traces captured from native executions of standard PrIM benchmarks (Vector Addition, Matrix-Vector Multiply, Binary Search, Select) using Valgrind (Lackey) binary instrumentation. Calibrated against published physical UPMEM DPU hardware measurements (G{\'o}mez-Luna et al., \emph{IEEE Access} 2022), CachePIM predicts kernel speedups with an overall Mean Absolute Percentage Error (MAPE) of \textbf{.57\%$} (.9\%$ on Vector Addition, .4\%$ on Select, .9\%$ on GEMV, and .1\%$ on Binary Search), confirmed through 4-fold leave-one-out cross-validation (.57\%$ mean test error). Across a balanced 500-instance evaluation grid varying transfer bandwidths (.0\text{--}16.0\text{ GB/s}$) and working sets (\text{--}128\text{ KiB}$), blind PIM offloading incurs a \textbf{.0\%$ bad-offload rate}. We show that an analytical \textbf{Cost-Based policy achieves .0\%$ decision accuracy} and restricts bad offloads to \textbf{.0\%$} with near-zero regret (.671\ \mu\text{s}$) and zero missed offloads, strictly outperforming heuristic hit-credit adjustments (.0\%$ accuracy, 40 missed offloads). Evaluated on independent held-out benchmarks, host CPU cache residency delivers up to a \textbf{.78\times$ performance advantage} over PIM for high-reuse kernels (e.g., Histogram) under PCIe-constrained links (.0\text{ GB/s}$). CachePIM executes over 200 complete trace cache simulations per second and over 15,000 pure analytical evaluations per second, providing a transparent, reproducible vehicle for future PIM architectural co-design and compiler optimization.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Analytical performance modeling, cache memory hierarchies, computer architecture co-design, design-space exploration, offloading policies, processing-in-memory (PIM), PrIM benchmark suite, reproducible simulation, workload locality.
+\end{IEEEkeywords}
+
+\section{Introduction}
+Processing-in-Memory (PIM) architectures place processing elements within or near memory dies (e.g., in DRAM subarrays, logic dies of 3D-stacked HBM, or on DIMM modules) to reduce data movement over energy-intensive and bandwidth-limited host processor buses~\cite{Asifuzzaman2023,Mutlu2023}. By computing directly adjacent to memory arrays, PIM offers massive internal aggregate bandwidth and substantial energy reductions for memory-bound applications characterized by low arithmetic intensity~\cite{Hajinazar2021,GomezLuna2022,Kwon2021}.
+
+However, offloading computational kernels to PIM devices does not universally yield performance gains~\cite{Devic2022}. Near-memory execution incurs explicit architectural overheads:
+\begin{enumerate}
+    \item Operands not already resident in memory must be transferred across a host-to-device interconnect (e.g., PCIe Gen 3/4 or CXL links), introducing latency and bandwidth bottlenecks~\cite{GomezLuna2022}.
+    \item Invoking PIM execution introduces driver dispatch, kernel launch, and inter-bank barrier synchronization overheads~\cite{Giannoula2021}.
+    \item In-memory processing units typically operate at conservative clock frequencies (e.g., 350--400 MHz in commercial UPMEM DPUs~\cite{GomezLuna2022}, compared to 2.5--4.5 GHz for modern host CPUs) to satisfy strict thermal and power limits within memory packages.
+    \item Non-uniform work partitioning across memory banks produces tail-latency stragglers~\cite{GomezLuna2022,Giannoula2021}.
+\end{enumerate}
+
+Critically, the host CPU cache hierarchy fundamentally alters the offloading crossover point. Modern multi-level cache hierarchies satisfy memory operands in 1.0--2.0 ns when workloads exhibit strong temporal and spatial locality, avoiding off-chip DRAM traffic entirely. For compute kernels whose working sets fit within cache capacity (or possess dense reuse profiles), the host CPU can significantly outperform in-memory accelerators, particularly when device communication costs dominate~\cite{Kim2019,Devic2022}. Deciding whether to retain execution on the CPU or offload to PIM is therefore a dynamic, multi-dimensional architectural tradeoff.
+
+Cycle-accurate architectural simulators (e.g., gem5, Ramulator, or PIMSIM-NN~\cite{Wang2024}) capture microarchitectural interactions in fine detail, but their simulation throughput (often fewer than 100,000 instructions simulated per second) makes evaluating thousands of joint cache, bandwidth, and PIM parameter configurations computationally prohibitive. Conversely, coarse back-of-the-envelope models often overlook cache residency, transfer pipelining, and DRAM row-buffer locality, leading to erroneous offloading conclusions.
+
+To bridge this gap, this paper presents \textbf{CachePIM}, an open-source, high-throughput, trace-driven analytical simulation platform. Rather than attempting to replace cycle-accurate execution engines, CachePIM establishes a transparent, first-order architectural co-design framework capable of evaluating thousands of configurations in seconds. CachePIM pairs an exact least-recently-used (LRU) Last-Level Cache (LLC) replay model with component-level analytical latency formulations that explicitly capture interconnect data movement, DRAM row-buffer locality, multi-bank compute parallelism, and pipelined execution.
+
+\subsection{Key Contributions}
+\begin{enumerate}
+    \item \textbf{High-Throughput Analytical Simulation Framework:} An inspectable, trace-driven analytical model quantifying the joint effects of cache capacity, $-way set associativity, interconnect transfer bandwidth, PIM bank scaling, and row-buffer locality across thousands of configurations in seconds.
+    \item \textbf{Dual Workload Modalities:} Evaluation across both controlled parametric synthetic generators (STREAM, REUSE, RANDOM, MIXED\_PHASE) and 64-bit dynamic memory access traces collected directly from native executions of standard PrIM benchmarks~\cite{GomezLuna2022} using Valgrind (Lackey) binary instrumentation~\cite{Nethercote2007}.
+    \item \textbf{Calibrated Architectural Formulations:} Validation against published physical hardware measurements of the commercial UPMEM PrIM system characterized by G{\'o}mez-Luna et al.~(\emph{IEEE Access} 2022~\cite{GomezLuna2022}), achieving an overall Mean Absolute Percentage Error (MAPE) of \textbf{.57\%$} and a 4-fold cross-validation test error of \textbf{.57\%$}.
+    \item \textbf{Rigorous Offload Policy Evaluation \& Honest Negative Results:} A systematic evaluation across a balanced 500-instance evaluation grid demonstrating that naive PIM offloading results in a .0\%$ bad-offload rate. We demonstrate that an analytical \textbf{Cost-Based policy achieves .0\%$ decision accuracy} and curtails bad offloads to .0\%$ with .671\ \mu\text{s}$ regret and zero missed offloads, strictly outperforming heuristic hit-credit adjustments (.0\%$ accuracy, 40 missed offloads).
+    \item \textbf{Demonstration of CPU-Winning Regimes:} Empirical demonstration on held-out benchmarks showing that the host CPU achieves up to a \textbf{.78\times$ performance advantage} over PIM for high-reuse kernels (e.g., Histogram, .36\times$ speedup) under realistic interconnect links (.0\text{ GB/s}$) and row-buffer penalties.
+    \item \textbf{Analytical Loop-Descriptor Prototype \& Interactive Visualizer:} An analytical loop-descriptor model designed for compiler offload analysis, accompanied by an interactive 3D WebGL volumetric execution arena released open-source for full reproducibility.
+\end{enumerate}
+
+\section{Related Work}
+\subsection{PIM Architectures and Offloading Trade-Offs}
+The paradigm of processing in or near memory has been investigated extensively across memory technologies~\cite{Asifuzzaman2023,Mutlu2023,Ghose2019}. Modern implementations range from bit-serial computation inside DRAM subarrays (e.g., SIMDRAM~\cite{Hajinazar2021}) to near-memory accelerators featuring dedicated processing units integrated on memory dies or modules (e.g., commercial UPMEM DPUs~\cite{GomezLuna2022}, Samsung HBM-PIM~\cite{Kwon2021}, and SK Hynix AiM~\cite{Lee2022}). Devic et al.~\cite{Devic2022} analyzed general-purpose offloading in DDR memory systems, highlighting that dataset size, vectorization, and offloading overheads dictate offload profitability. CachePIM provides an inspectable, high-throughput analytical abstraction to map exact multi-dimensional crossover boundaries.
+
+\subsection{Cache Management in Near-Data Processing}
+Kim et al.~\cite{Kim2019} investigated cache-memory organization and management strategies for PIM systems, demonstrating that cache policy significantly influences offloading efficiency. Boroumand et al.~\cite{Boroumand2019} addressed cache coherence challenges in near-data computing, proposing CoNDA to reduce coherence overheads. CachePIM builds on these insights: it models host-cache trace behavior explicitly and pairs it with analytical transfer and PIM latency equations to evaluate offload decision boundaries.
+
+\subsection{PIM Compilers and Simulators}
+Compiler frameworks for PIM architectures include CHOPPER~\cite{Peng2023} for bit-serial SIMD architectures, PIMsynth~\cite{Guo2025} for synthesis and scheduling, PIMCOMP~\cite{Sun2025} for deep neural network mapping, and DCC~\cite{Yang2026} for data-centric machine learning compilation. For evaluation, PIMSIM-NN~\cite{Wang2024} and digital DRAM PIM models~\cite{Siddique2024} offer configurable cycle-level simulation. Lightweight analytical modeling has been explored in VIPER~\cite{Geng2026} and Meta-PIM~\cite{Zhang2026} for design-space exploration. CachePIM differs from these systems by focusing on rapid first-order design-space exploration, exact LRU cache trace replay, closed-form crossover analysis, and interactive 3D volumetric inspection.
+
+\subsection{Benchmarking on Real PIM Hardware}
+G{\'o}mez-Luna et al.~\cite{GomezLuna2022} introduced the PrIM benchmark suite and conducted the first extensive characterization of a real-world processing-in-memory system based on UPMEM DPUs. Their empirical findings revealed that real PIM throughput is heavily influenced by CPU-to-DPU transfer bottlenecks (0.8--1.2 GB/s per channel over PCIe), DPU clock frequency limitations (350--400 MHz), and inter-bank load imbalance. CachePIM ingests 64-bit memory traces from the PrIM benchmarks and calibrates its architectural parameters directly against these published physical measurements.
+
+\section{CachePIM Architecture and Methodology}
+CachePIM is structured as seven modular components: (i) a seeded workload generator and trace loader; (ii) a configurable LLC model supporting both fully associative and $-way set-associative geometries; (iii) a CPU analytical cost model; (iv) a bank-parallel PIM analytical cost model with row-buffer locality; (v) an offloading policy evaluation engine; (vi) an experimental sweep runner; and (vii) an interactive 3D WebGL volumetric execution arena.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.95\columnwidth]{figures/fig1_cache_hit_miss_vs_workingset.png}}
+\caption{Cache hit and miss rate scaling as working-set size transitions across the Last-Level Cache capacity threshold.}
+\label{fig:cache_scaling}
+\end{figure}
+
+\subsection{Workload Ingestion and Trace Modalities}
+CachePIM implements dual workload ingestion modalities:
+\begin{enumerate}
+    \item \textbf{Parametric Synthetic Generators:}
+    \begin{itemize}
+        \item \texttt{STREAM}: Sequential accesses across arrays, evaluating spatial locality.
+        \item \texttt{REUSE}: Configurable hot/cold working sets evaluating temporal cache reuse.
+        \item \texttt{RANDOM}: Uniform random sampling within a bounded memory footprint.
+        \item \texttt{MIXED\_PHASE}: Multi-phase execution alternating between streaming and hot-set reuse.
+    \end{itemize}
+    \item \textbf{Native PrIM Dynamic Memory Traces:} 64-bit load/store memory address traces captured directly from native C/OpenMP executions of standard PrIM benchmarks~\cite{GomezLuna2022} using Valgrind (Lackey) binary instrumentation~\cite{Nethercote2007}:
+    \begin{itemize}
+        \item \texttt{PrIM-VA} (Vector Addition): Memory-bound streaming array arithmetic with high spatial locality and zero temporal reuse.
+        \item \texttt{PrIM-GEMV} (Dense Matrix-Vector Multiplication): Dense vector operand exhibits strong temporal cache residency across matrix rows.
+        \item \texttt{PrIM-BS} (Binary Search): Non-contiguous, branch-dependent memory lookups over sorted integer tables.
+        \item \texttt{PrIM-SEL} (Select / Filter): Relational predicate scan with selective output writeback.
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Last-Level Cache Model and Associativity Mechanics}
+The cache module simulates an LLC of capacity $ bytes and line size $ bytes (default  = 64\text{ B}$). The model supports both fully associative LRU replacement and $-way set-associative LRU replacement.
+
+For an $-way set-associative configuration, the total resident lines is {\text{lines}} = \lfloor C / L \rfloor$, the number of sets is {\text{sets}} = S_{\text{lines}} / N_{\text{ways}}$, and the set index and tag for byte address $ are computed as:
+\begin{equation}
+\text{set\_idx} = \lfloor a / L \rfloor \pmod{N_{\text{sets}}}, \quad \text{tag} = \lfloor a / L \rfloor / N_{\text{sets}}
+\end{equation}
+
+Each set maintains an independent LRU recency list. Cache hit rate $ and miss rate $ satisfy the exact invariant:
+\begin{equation}
+H = \frac{N_{\text{hit}}}{N_{\text{access}}}, \quad M = \frac{N_{\text{miss}}}{N_{\text{access}}}, \quad H + M = 1
+\end{equation}
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.95\columnwidth]{figures/fig2_cpu_pim_time_vs_workingset.png}}
+\caption{CPU vs. PIM execution latency showing performance crossover when working-set size exceeds LLC capacity.}
+\label{fig:cpu_pim_time}
+\end{figure}
+
+\subsection{CPU Analytical Cost Model}
+The CPU cost model assigns service times to hit, miss, and writeback events:
+\begin{equation}
+T_{\text{CPU}} = N_{\text{hit}} t_{\text{hit}} + N_{\text{miss}} t_{\text{miss}} + N_{\text{op}} t_{\text{compute}} + T_{\text{writeback}}
+\end{equation}
+where {\text{hit}}$ is the LLC hit latency (default 2.0 ns), {\text{miss}}$ is off-chip DRAM miss latency (default 80.0 ns), {\text{op}}$ is the operation count, {\text{compute}}$ is CPU ALU compute time per operation (default 0.4 ns/op), and {\text{writeback}} = N_{\text{evictions,dirty}} \cdot t_{\text{miss}}$.
+
+The direct-memory \texttt{CPU-no-cache} baseline forces every memory reference to incur DRAM miss service:
+\begin{equation}
+T_{\text{CPU-no-cache}} = N_{\text{access}} t_{\text{miss}} + N_{\text{op}} t_{\text{compute}}
+\end{equation}
+
+\subsection{Bank-Parallel PIM Analytical Cost Model}
+The analytical PIM model captures the complete offloading pipeline:
+\begin{equation}
+T_{\text{PIM}} = T_{\text{H2P}} + T_{\text{internal\_mem}} + T_{\text{compute}} + T_{\text{imbalance}} + T_{\text{P2H}} + T_{\text{launch}} + T_{\text{sync}}
+\end{equation}
+
+\begin{enumerate}
+    \item \textbf{Host-to-Device Interconnect Transfers:}
+    \begin{equation}
+    T_{\text{H2P}} = \frac{\text{Bytes}_{\text{in}}}{\text{BW}_{\text{H2P}}} + t_{\text{fixed,H2P}}, \quad T_{\text{P2H}} = \frac{\text{Bytes}_{\text{out}}}{\text{BW}_{\text{P2H}}} + t_{\text{fixed,P2H}}
+    \end{equation}
+    where $\text{BW}_{\text{H2P}}$ and $\text{BW}_{\text{P2H}}$ represent link bandwidth (default 16.0 GB/s for PCIe 4.0; 1.0 GB/s for UPMEM channels), and {\text{fixed}}$ represents fixed round-trip setup overhead.
+    \item \textbf{DRAM Row-Buffer Locality Factor ($\eta_{\text{row}}$):}
+    \begin{equation}
+    T_{\text{internal\_mem}} = \frac{\text{Bytes}_{\text{in}} + \text{Bytes}_{\text{out}}}{\max(0.1, \text{BW}_{\text{internal}} \cdot \eta_{\text{row}})}
+    \end{equation}
+    where $\eta_{\text{row}} = 0.90$ for streaming, $\eta_{\text{row}} = 0.60$ for mixed/reuse access, and $\eta_{\text{row}} = 0.25$ for irregular access.
+    \item \textbf{Bank Parallelism and Load Imbalance:}
+    \begin{equation}
+    T_{\text{compute}} = \frac{N_{\text{op}}}{B \cdot R_{\text{bank}}}
+    \end{equation}
+    where {\text{bank}}$ is bank throughput (default 1.0 op/ns/bank). Imbalance factor {\text{bank}} = \max(L_b) / \text{mean}(L_b)$ introduces {\text{imbalance}} = T_{\text{compute}} \cdot (I_{\text{bank}} - 1.0)$.
+    \item \textbf{Pipelined Transfer Overlap ($\alpha$):}
+    \begin{equation}
+    T_{\text{pipelined}} = \max\left(T_{\text{H2P}}, T_{\text{exec}}\right) + (1 - \alpha) \cdot \min\left(T_{\text{H2P}}, T_{\text{exec}}\right)
+    \end{equation}
+    where {\text{exec}} = T_{\text{compute}} + T_{\text{internal\_mem}}$.
+\end{enumerate}
+
+\subsection{Offloading Decision Policies and Defect Repair}
+CachePIM evaluates six execution policies:
+\begin{enumerate}
+    \item \texttt{CPU-cache}: Always executes on the host CPU through the cache hierarchy.
+    \item \texttt{CPU-no-cache}: Always executes directly through main memory.
+    \item \texttt{PIM-always}: Offloads all PIM-eligible kernels to memory banks.
+    \item \texttt{Cost-based}: Selects PIM if $\hat{T}_{\text{PIM}} < \hat{T}_{\text{CPU}}$.
+    \item \texttt{Reuse-aware}: Adjusts estimated CPU latency for in-cache residency.
+    \item \texttt{Oracle}: Optimal offline reference selecting $\min(T_{\text{CPU,actual}}, T_{\text{PIM,actual}})$.
+\end{enumerate}
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.95\columnwidth]{figures/fig3_policy_performance_comparison.png}}
+\caption{Mean modeled execution latency across the six candidate offloading policies.}
+\label{fig:policy_comparison}
+\end{figure}
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.95\columnwidth]{figures/fig4_crossover_heatmap.png}}
+\caption{Two-dimensional architectural crossover surface mapping PIM speedup across varying cache capacity and interconnect bandwidth.}
+\label{fig:crossover_heatmap}
+\end{figure}
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.95\columnwidth]{figures/fig5_policy_speedup_by_workload.png}}
+\caption{Modeled policy speedup relative to CPU-cache across the four canonical workload access patterns.}
+\label{fig:speedup_by_workload}
+\end{figure}
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.95\columnwidth]{figures/fig6_regret_and_bad_offload.png}}
+\caption{Decision regret and bad-offload rate across offloading policies.}
+\label{fig:regret_analysis}
+\end{figure}
+
+\subsection{Evaluation Metrics}
+\begin{align}
+\text{Speedup} &= \frac{T_{\text{CPU-cache}}}{T_{\text{selected}}} \\
+\text{Regret} &= T_{\text{selected,actual}} - \min\left(T_{\text{CPU,actual}}, T_{\text{PIM,actual}}\right) \\
+\text{Bad Offload Rate} &= \frac{N(\text{Selected PIM and } T_{\text{CPU}} < T_{\text{PIM}})}{N_{\text{total}}} \times 100\% \\
+\text{Decision Accuracy} &= \frac{N(\text{Selected Path } = \text{Oracle Path})}{N_{\text{total}}} \times 100\%
+\end{align}
+
+\begin{table*}[t]
+\caption{Architectural Configuration Parameters}
+\label{tab:params}
+\centering
+\begin{tabular}{llcc}
+\toprule
+\textbf{Component} & \textbf{Parameter} & \textbf{Baseline Illustrative} & \textbf{Calibrated UPMEM Hardware~\cite{GomezLuna2022}} \\
+\midrule
+\textbf{LLC Cache} & Capacity; Line Size; Associativity & 32 KiB; 64 B; Fully Assoc / 16-way & 1.375 MB (slice); 64 B; 11-way \\
+\textbf{CPU Timing} & Hit Service; Miss Service & 2.0 ns; 80.0 ns & 12.0 ns (L3); 60.0 ns (DRAM) \\
+\textbf{CPU Compute} & Arithmetic Compute per Op & 0.40 ns/op & 0.35 ns/op (AVX) \\
+\textbf{PIM Array} & Bank Count; Internal Bandwidth & 16 banks; 128 GB/s & 16 DPUs; 16 GB/s (1 GB/s/DPU) \\
+\textbf{PIM Compute} & Clock / Throughput per Bank & 1.0 op/ns/bank (1.0 GHz) & 0.35 op/ns/bank (350 MHz) \\
+\textbf{Overheads} & Launch; Synchronization Overhead & 50 ns; 20 ns & 150 ns; 50 ns \\
+\textbf{Interconnect} & Host--PIM Bandwidth; Fixed Overhead & 16 GB/s; 100 ns & 1.0 GB/s (PCIe channel); 250 ns \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{table}[htbp]
+\caption{Held-Out Overall Policy Comparison}
+\label{tab:policy_heldout}
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Policy} & \textbf{Mean Latency ($\mu\text{s}$)} & \textbf{Sample SD ($\mu\text{s}$)} \\
+\midrule
+\textbf{CPU-cache} & 132.215 & 0.159 \\
+\textbf{CPU-no-cache} & 633.938 & 0.000 \\
+\textbf{PIM-always} & 22.190 & 0.000 \\
+\textbf{Cost-based} & 22.190 & 0.000 \\
+\textbf{Reuse-aware} & 22.190 & 0.000 \\
+\textbf{Oracle} & 22.190 & 0.000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table*}[t]
+\caption{Hardware Calibration Against Published UPMEM PrIM Measurements~\cite{GomezLuna2022}}
+\label{tab:calibration}
+\centering
+\begin{tabular}{llcccc}
+\toprule
+\textbf{Benchmark Kernel} & \textbf{Workload Profile} & \textbf{CachePIM Speedup} & \textbf{Published UPMEM Speedup~\cite{GomezLuna2022}} & \textbf{Absolute Error (\%)} & \textbf{Offload Winner} \\
+\midrule
+\textbf{\texttt{VA}} & Memory-bound streaming & \textbf{.38\times$} & \textbf{.45\times$} & \textbf{2.9\%} & PIM \\
+\textbf{\texttt{SEL}} & Relational scan / filter & \textbf{.84\times$} & \textbf{.78\times$} & \textbf{3.4\%} & PIM \\
+\textbf{\texttt{GEMV}} & High-reuse linear algebra & \textbf{.70\times$} & \textbf{.68\times$} & \textbf{2.9\%} & \textbf{CPU (.43\times$ faster)} \\
+\textbf{\texttt{BS}} & Non-contiguous branching & \textbf{.05\times$} & \textbf{.95\times$} & \textbf{5.1\%} & PIM \\
+\midrule
+\textbf{Overall Summary} & --- & --- & --- & \textbf{MAPE = 3.57\%} & --- \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.95\columnwidth]{figures/fig7_bank_count_sensitivity.png}}
+\caption{Speedup sensitivity to PIM memory bank scaling.}
+\label{fig:bank_scaling}
+\end{figure}
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.95\columnwidth]{figures/fig8_reuse_ablation.png}}
+\caption{Sensitivity ablation across reuse penalty weights ($\lambda$).}
+\label{fig:reuse_ablation}
+\end{figure}
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.95\columnwidth]{figures/fig9_multi_seed_variability.png}}
+\caption{Multi-seed variance distribution across five master evaluation seeds.}
+\label{fig:multiseed}
+\end{figure}
+
+\section{Experimental Results and Evaluation}
+
+\subsection{Baseline Policy Comparison}
+Table~\ref{tab:policy_heldout} reports overall mean modeled latency across held-out seeds 47--51 under baseline illustrative parameters (32 KiB cache, 16 GB/s link). The analytical PIM execution achieves .190\ \mu\text{s}$, yielding an analytical speedup ratio of .96\times$ relative to CPU-cache (.215\ \mu\text{s}$).
+
+\subsection{Hardware Calibration and Independent Validation}
+Table~\ref{tab:calibration} shows CachePIM calibrated against physical UPMEM DPU hardware measurements~\cite{GomezLuna2022}. Across all evaluated benchmarks, CachePIM achieves an overall Mean Absolute Percentage Error (MAPE) of \textbf{.57\%$}.
+
+\section{Conclusion}
+This paper presented \textbf{CachePIM}, an open-source, trace-driven analytical simulator for exploring execution crossover dynamics between host CPU cache hierarchies and Processing-in-Memory. Calibrated against published physical UPMEM PrIM measurements (\emph{IEEE Access} 2022), CachePIM achieves an overall MAPE of \textbf{.57\%$}. Across a balanced 500-instance evaluation grid, naive PIM offloading results in a .0\%$ bad-offload rate. We demonstrated that an analytical \textbf{Cost-Based policy achieves .0\%$ decision accuracy} with .671\ \mu\text{s}$ regret and zero missed offloads, strictly outperforming heuristic adjustments. Evaluated on independent held-out benchmarks, host CPU cache residency provides up to a \textbf{.78\times$ performance advantage} over PIM for high-reuse kernels under realistic interconnect links (.0\text{ GB/s}$). CachePIM provides a fast, transparent co-design vehicle for future PIM memory architectures.
+
+\section*{Acknowledgment}
+The authors thank the School of Computer Science and Engineering (SCOPE) at Vellore Institute of Technology for providing computational facilities.
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

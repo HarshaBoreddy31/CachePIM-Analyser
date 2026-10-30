@@ -1,0 +1,8 @@
+CachePIM Demonstration Video
+Duration: 4 to 7 minutes
+
+[PASTE YOUR VIDEO LINK BELOW (e.g. YouTube Unlisted or Google Drive Shareable Link)]:
+https://drive.google.com/file/d/YOUR_VIDEO_ID/view?usp=sharing
+
+Alternatively, place the recorded MP4 file directly in this folder:
+demo_video/demo_video.mp4
