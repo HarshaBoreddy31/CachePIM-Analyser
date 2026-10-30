@@ -24,7 +24,7 @@ This repository satisfies all 11 required submission criteria for independent re
 | **8** | **Execution Scripts** | [`setup.bat`](setup.bat), [`run_dashboard.bat`](run_dashboard.bat), [`setup.sh`](setup.sh), [`run_dashboard.sh`](run_dashboard.sh) | Cross-platform one-click automated setup and execution scripts for Windows, Linux, and macOS. |
 | **9** | **Results** | [`results/`](results/) (`raw/`, `summary/`, `figures/`, `screenshots/`, `manifest.json`) | Complete CSV telemetry data, held-out statistical summaries, 9 publication figures, live UI screenshots, and execution manifest. |
 | **10** | **Documentation** | [`documentation/CachePIM_Manuscript_Draft2.pdf`](documentation/CachePIM_Manuscript_Draft2.pdf) & [`docs/`](docs/) | Complete research manuscript (Draft 2 PDF), peer-review correction audit, and benchmark citations. |
-| **11** | **Demo Video** | [`demo_video/`](demo_video/) | Timed 4–7 minute demonstration script ([`DEMO_SCRIPT_AND_WALKTHROUGH.md`](demo_video/DEMO_SCRIPT_AND_WALKTHROUGH.md)), recording guide, and video link. |
+| **11** | **Demo Video** | [Watch Demo Video (Google Drive)](https://drive.google.com/file/d/1JHKhZ6rN8YMnCWYOJ6lIgAhVMI54vQWV/view?usp=drive_link) & [`demo_video/`](demo_video/) | Official demonstration video (4–7 mins): [https://drive.google.com/file/d/1JHKhZ6rN8YMnCWYOJ6lIgAhVMI54vQWV/view?usp=drive_link](https://drive.google.com/file/d/1JHKhZ6rN8YMnCWYOJ6lIgAhVMI54vQWV/view?usp=drive_link). |
 
 ---
 
@@ -347,3 +347,13 @@ The checked-in `results/manifest.json` records model version, seeds, the selecte
 The corrected version addresses result-path collisions between tuning and held-out data, master-seed aggregation, missing PIM output bytes for supported kernels, PIM internal-memory service accounting, deterministic bank-skew modeling, and configuration-driven sweeps. The heatmap is rendered from the saved joint-sweep CSV rather than silently running a hidden sweep inside the plotting routine. The corrected automated suite contains **24 passing tests** in the verified run. See `docs/CORRECTION_AUDIT.md` for the change list and known caveats.
 
 The local corrected source and results are not automatically pushed to the public GitHub repository. The files in the accompanying corrected-source archive represent the audited artifact. Publish them to GitHub only after reviewing the changes and confirming the final manuscript and artifact version.
+
+---
+
+## 11. Demonstration Video
+
+- **Video URL:** [https://drive.google.com/file/d/1JHKhZ6rN8YMnCWYOJ6lIgAhVMI54vQWV/view?usp=drive_link](https://drive.google.com/file/d/1JHKhZ6rN8YMnCWYOJ6lIgAhVMI54vQWV/view?usp=drive_link)
+- **Duration:** 4 to 7 minutes
+- **Platform:** Google Drive (Cloud Streamable)
+- **Documentation & Walkthrough:** [`demo_video/`](demo_video/)
+
