@@ -354,5 +354,5 @@ The local corrected source and results are not automatically pushed to the publi
 
 - **Video URL:** [https://drive.google.com/file/d/1JHKhZ6rN8YMnCWYOJ6lIgAhVMI54vQWV/view?usp=drive_link](https://drive.google.com/file/d/1JHKhZ6rN8YMnCWYOJ6lIgAhVMI54vQWV/view?usp=drive_link)
 - **Platform:** Google Drive (Cloud Streamable)
-- **Documentation & Walkthrough:** [`demo_video/`](demo_video/)
+- **Documentation & Walkthrough:**
 
