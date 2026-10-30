@@ -353,7 +353,6 @@ The local corrected source and results are not automatically pushed to the publi
 ## 11. Demonstration Video
 
 - **Video URL:** [https://drive.google.com/file/d/1JHKhZ6rN8YMnCWYOJ6lIgAhVMI54vQWV/view?usp=drive_link](https://drive.google.com/file/d/1JHKhZ6rN8YMnCWYOJ6lIgAhVMI54vQWV/view?usp=drive_link)
-- **Duration:** 4 to 7 minutes
 - **Platform:** Google Drive (Cloud Streamable)
 - **Documentation & Walkthrough:** [`demo_video/`](demo_video/)
 
