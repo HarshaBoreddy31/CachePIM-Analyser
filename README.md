@@ -22,7 +22,7 @@ This repository satisfies all 11 required submission criteria for independent re
 | **6** | **Trained Models** | [`models/README.md`](models/README.md) | *N/A (Analytical Architecture)*: Evaluates exact closed-form cache equations and analytical queuing math; requires no neural network weights. |
 | **7** | **Configuration Files** | [`config/default.yaml`](config/default.yaml), [`config/experiment.yaml`](config/experiment.yaml), [`.streamlit/config.toml`](.streamlit/config.toml) | Declarative hardware parameters, evaluation sweep grids, and Streamlit theme configurations. |
 | **8** | **Execution Scripts** | [`setup.bat`](setup.bat), [`run_dashboard.bat`](run_dashboard.bat), [`setup.sh`](setup.sh), [`run_dashboard.sh`](run_dashboard.sh) | Cross-platform one-click automated setup and execution scripts for Windows, Linux, and macOS. |
-| **9** | **Results** | [`results/`](results/) (`raw/`, `summary/`, `figures/`, `manifest.json`) | Complete CSV telemetry data, held-out statistical summaries, 9 publication figures, and execution manifest. |
+| **9** | **Results** | [`results/`](results/) (`raw/`, `summary/`, `figures/`, `screenshots/`, `manifest.json`) | Complete CSV telemetry data, held-out statistical summaries, 9 publication figures, live UI screenshots, and execution manifest. |
 | **10** | **Documentation** | [`documentation/CachePIM_Manuscript_Draft2.pdf`](documentation/CachePIM_Manuscript_Draft2.pdf) & [`docs/`](docs/) | Complete research manuscript (Draft 2 PDF), peer-review correction audit, and benchmark citations. |
 | **11** | **Demo Video** | [`demo_video/`](demo_video/) | Timed 4–7 minute demonstration script ([`DEMO_SCRIPT_AND_WALKTHROUGH.md`](demo_video/DEMO_SCRIPT_AND_WALKTHROUGH.md)), recording guide, and video link. |
 
@@ -79,6 +79,7 @@ CachePIM/
 │   ├── raw/                      # Final held-out CSV data and sensitivity sweeps
 │   ├── summary/                  # Master-seed summaries and held-out analysis
 │   ├── figures/                  # Nine publication figures (PNG and PDF)
+│   ├── screenshots/              # Interactive simulation dashboard screenshots
 │   ├── configs/                  # Configuration snapshots for each experiment
 │   ├── tuning/                   # Per-lambda development runs and selection scores
 │   ├── held_out/                 # Frozen-policy held-out evaluation outputs
@@ -300,6 +301,30 @@ Increasing the modeled number of PIM banks from 4 to 64 improves modeled speedup
 
 The transfer, crossover, joint cache/transfer, bank-count, bank-skew, and penalty sweeps are one-seed controlled sensitivity experiments. They are descriptive parameter studies, **not multi-seed statistical estimates**. Their raw rows include the chosen seed and configuration metadata.
 
+### Interactive Dashboard & Simulation Telemetry Visualizations
+
+The following live telemetry screenshots captured from the CachePIM interactive simulation dashboard demonstrate real-time CPU vs. PIM execution modeling, cache locality analysis, and architectural sensitivity:
+
+#### 1. CPU vs. PIM Execution Arena: Top View (Streaming Offload Path)
+Animates 64-byte data packets dispatched across the 8.0 GB/s interconnect directly into the 16 parallel PIM memory banks for memory-bound streaming workloads (`PrIM-VA`).
+
+![Execution Arena Top View](results/screenshots/01_execution_arena_top_view.png)
+
+#### 2. CPU vs. PIM Execution Arena: 3D Isometric View (Host CPU Local Path)
+Visualizes local execution path when high temporal cache reuse (`PrIM-GEMV`, 99.1% LLC hit rate) makes servicing operands in the CPU Last-Level Cache significantly faster than offloading across the host link.
+
+![Execution Arena 3D Isometric](results/screenshots/02_execution_arena_3d_isometric.png)
+
+#### 3. Execution Latency & Component-Level Cost Breakdown
+Detailed latency comparison across all candidate offloading policies alongside the LLC event breakdown donut chart (64,659 accesses, 99.1% hit rate) and additive CPU vs. PIM cost accounting.
+
+![Latency and Cost Breakdown](results/screenshots/03_policy_latency_and_cost_breakdown.png)
+
+#### 4. Architectural Sensitivity & 2D Crossover Heatmap
+Multi-dimensional sensitivity analysis charting speedup vs. host link bandwidth, LLC locality curve vs. working-set size, bank count scaling, and the complete 2D crossover surface (Cache Capacity vs. Link Bandwidth).
+
+![Crossover Analysis and Heatmap](results/screenshots/04_crossover_analysis_and_heatmap.png)
+
 ### How to reproduce the results
 
 From the repository root, use a fresh output directory to avoid mixing a new run with prior artifacts:
@@ -317,7 +342,7 @@ python -c "from cachepim.plots import generate_all_plots; generate_all_plots('re
 
 The checked-in `results/manifest.json` records model version, seeds, the selected reuse penalty, and result classification. All numbers above are simulated analytical estimates over synthetic traces. No physical CPU/PIM performance or energy was measured.
 
-## 9. Correction Audit and Reproducibility Notes
+## 10. Correction Audit and Reproducibility Notes
 
 The corrected version addresses result-path collisions between tuning and held-out data, master-seed aggregation, missing PIM output bytes for supported kernels, PIM internal-memory service accounting, deterministic bank-skew modeling, and configuration-driven sweeps. The heatmap is rendered from the saved joint-sweep CSV rather than silently running a hidden sweep inside the plotting routine. The corrected automated suite contains **24 passing tests** in the verified run. See `docs/CORRECTION_AUDIT.md` for the change list and known caveats.
 
